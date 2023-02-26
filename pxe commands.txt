@@ -1,0 +1,66 @@
+#__________________Install needed modules_____________________________
+yum install dhcp tftp tftp-server syslinux vsftpd xinetd
+
+
+#____________________Xinetd: it configures vsftpd__________________________
+vim /etc/xinetd.d/tftp
+  > disable	=no
+
+
+
+#DHCP : it shares needed network-configuration between servers and other machine
+cp /usr/share/doc/dhcp*/dhcpd.conf.example /etc/dhcp/dhcp.conf
+vim /etc/dhcp/dhcpd.conf
+  >subnet 10.0.0.0 netmask 255.255.255.0
+  > {
+  >  range 10.0.0.20 10.0.0.120;
+  >  option routers 10.0.0.1;
+  > option broadcast-address 10.0.0.255;
+  > default-lease-time 60000;
+  > max-lease-time 72000;
+  > nextserver 10.0.0.1;
+  > filename "pxelinux.0";
+  >}
+#______________Copy network boot files_____________________________- 
+cp  /usr/share/syslinux/pxelinux.0 /var/lib/tftboot
+cp  /usr/share/syslinux/menu.c32 /var/lib/tftboot
+cp  /usr/share/syslinux/memdisk /var/lib/tftboot
+cp  /usr/share/syslinux/mboot.c32 /var/lib/tftboot
+cp  /usr/share/syslinux/chain.c32 /var/lib/tftboot
+
+mkdir /var/lib/tftboot/pxelinux.cfg
+mkdir /var/lib/tftboot/networkboot
+
+cp /var/ftp/pub/images/pxeboot/vmlinuz /var/lib/tftboot/networkboot
+cp /var/ftp/pub/images/pxeboot/initrd.img /var/lib/tftboot/networkboot	
+
+#_____________________design menu__________________________________
+vim /usr/share/syslinux/menu.c32
+ > default menu.c32
+ > prompt 0
+ > timeout 30
+ > MENU LABEL RHEL7_X64
+ > KERNEL /networkboot/vmlinuz
+ > APPEND initrd=/networkboot/initrd.img inst.repo=ftp://10.0.0.1/pub ks=ftp://10.0.0.1/rhel7.cfg
+
+#________________________mount ISO on cdrom___________________________
+mount /dev/s0 /var/ftp/pub/
+
+#_______KickStart file: it makes the process fully automated __________________
+cp /root/anaconda-ks.cfg /var/ftp/rhel7.cfg   
+vim /vat/ftp/rhel.cfg
+ > url --url="ftp://10.0.0.1/pub"
+ > install
+ > selinux disabled
+ > firewall --disabled
+ > reboot
+
+
+#_____________________setup firewall and selinux______________________________
+firewall-cmd --add-service={ftp,dhcp} --permenant
+firewall-cmd --add-port={69/tcp,69/udp,4011/udp} --permenant
+firewall-cmd --reload
+setsebool -P allow_ftpd_full_access 1
+
+#______________________initialize services__________________________________
+systemctl enable --now xinetd dhcpd.service vsftpd
